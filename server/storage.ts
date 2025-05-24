@@ -12,12 +12,41 @@ import {
   type ChatSettings,
   type InsertChatSettings
 } from "@shared/schema";
-import { neon } from "@neondatabase/serverless";
-import { drizzle } from "drizzle-orm/neon-http";
+import Database from "better-sqlite3";
+import { drizzle } from "drizzle-orm/better-sqlite3";
 import { eq } from "drizzle-orm";
 
-const sql = neon(process.env.DATABASE_URL!);
-const db = drizzle(sql);
+const sqlite = new Database("chat.db");
+const db = drizzle(sqlite);
+
+// Create tables if they don't exist
+sqlite.exec(`
+  CREATE TABLE IF NOT EXISTS users (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    username TEXT NOT NULL UNIQUE,
+    password TEXT NOT NULL
+  );
+
+  CREATE TABLE IF NOT EXISTS conversations (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    title TEXT NOT NULL,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+  );
+
+  CREATE TABLE IF NOT EXISTS messages (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    conversation_id INTEGER REFERENCES conversations(id),
+    role TEXT NOT NULL,
+    content TEXT NOT NULL,
+    timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
+  );
+
+  CREATE TABLE IF NOT EXISTS chat_settings (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    temperature TEXT NOT NULL DEFAULT '0.7',
+    max_tokens INTEGER NOT NULL DEFAULT 512
+  );
+`);
 
 export interface IStorage {
   getUser(id: number): Promise<User | undefined>;
