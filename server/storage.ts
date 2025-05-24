@@ -12,6 +12,12 @@ import {
   type ChatSettings,
   type InsertChatSettings
 } from "@shared/schema";
+import { neon } from "@neondatabase/serverless";
+import { drizzle } from "drizzle-orm/neon-http";
+import { eq } from "drizzle-orm";
+
+const sql = neon(process.env.DATABASE_URL!);
+const db = drizzle(sql);
 
 export interface IStorage {
   getUser(id: number): Promise<User | undefined>;
@@ -31,115 +37,84 @@ export interface IStorage {
   updateChatSettings(settings: InsertChatSettings): Promise<ChatSettings>;
 }
 
-export class MemStorage implements IStorage {
-  private users: Map<number, User>;
-  private conversations: Map<number, Conversation>;
-  private messages: Map<number, Message>;
-  private chatSettings: ChatSettings | undefined;
-  private userIdCounter: number;
-  private conversationIdCounter: number;
-  private messageIdCounter: number;
-  private settingsIdCounter: number;
-
-  constructor() {
-    this.users = new Map();
-    this.conversations = new Map();
-    this.messages = new Map();
-    this.userIdCounter = 1;
-    this.conversationIdCounter = 1;
-    this.messageIdCounter = 1;
-    this.settingsIdCounter = 1;
-    
-    // Initialize default settings
-    this.chatSettings = {
-      id: this.settingsIdCounter++,
-      temperature: "0.7",
-      maxTokens: 512,
-    };
-  }
-
+export class DatabaseStorage implements IStorage {
   async getUser(id: number): Promise<User | undefined> {
-    return this.users.get(id);
+    const result = await db.select().from(users).where(eq(users.id, id));
+    return result[0];
   }
 
   async getUserByUsername(username: string): Promise<User | undefined> {
-    return Array.from(this.users.values()).find(
-      (user) => user.username === username,
-    );
+    const result = await db.select().from(users).where(eq(users.username, username));
+    return result[0];
   }
 
   async createUser(insertUser: InsertUser): Promise<User> {
-    const id = this.userIdCounter++;
-    const user: User = { ...insertUser, id };
-    this.users.set(id, user);
-    return user;
+    const result = await db.insert(users).values(insertUser).returning();
+    return result[0];
   }
 
   async getConversations(): Promise<Conversation[]> {
-    return Array.from(this.conversations.values());
+    return await db.select().from(conversations).orderBy(conversations.createdAt);
   }
 
   async getConversation(id: number): Promise<Conversation | undefined> {
-    return this.conversations.get(id);
+    const result = await db.select().from(conversations).where(eq(conversations.id, id));
+    return result[0];
   }
 
   async createConversation(insertConversation: InsertConversation): Promise<Conversation> {
-    const id = this.conversationIdCounter++;
-    const conversation: Conversation = {
-      ...insertConversation,
-      id,
-      createdAt: new Date(),
-    };
-    this.conversations.set(id, conversation);
-    return conversation;
+    const result = await db.insert(conversations).values(insertConversation).returning();
+    return result[0];
   }
 
   async deleteConversation(id: number): Promise<void> {
-    this.conversations.delete(id);
-    // Also delete all messages for this conversation
-    for (const [messageId, message] of this.messages.entries()) {
-      if (message.conversationId === id) {
-        this.messages.delete(messageId);
-      }
-    }
+    // Delete messages first (foreign key constraint)
+    await db.delete(messages).where(eq(messages.conversationId, id));
+    // Then delete conversation
+    await db.delete(conversations).where(eq(conversations.id, id));
   }
 
   async getMessages(conversationId: number): Promise<Message[]> {
-    return Array.from(this.messages.values())
-      .filter(message => message.conversationId === conversationId)
-      .sort((a, b) => a.timestamp.getTime() - b.timestamp.getTime());
+    return await db.select()
+      .from(messages)
+      .where(eq(messages.conversationId, conversationId))
+      .orderBy(messages.timestamp);
   }
 
   async addMessage(insertMessage: InsertMessage): Promise<Message> {
-    const id = this.messageIdCounter++;
-    const message: Message = {
-      ...insertMessage,
-      id,
-      timestamp: new Date(),
-    };
-    this.messages.set(id, message);
-    return message;
+    const result = await db.insert(messages).values(insertMessage).returning();
+    return result[0];
   }
 
   async clearMessages(conversationId: number): Promise<void> {
-    for (const [messageId, message] of this.messages.entries()) {
-      if (message.conversationId === conversationId) {
-        this.messages.delete(messageId);
-      }
-    }
+    await db.delete(messages).where(eq(messages.conversationId, conversationId));
   }
 
   async getChatSettings(): Promise<ChatSettings | undefined> {
-    return this.chatSettings;
+    const result = await db.select().from(chatSettings).limit(1);
+    if (result.length === 0) {
+      // Create default settings if none exist
+      const defaultSettings = { temperature: "0.7", maxTokens: 512 };
+      const created = await db.insert(chatSettings).values(defaultSettings).returning();
+      return created[0];
+    }
+    return result[0];
   }
 
   async updateChatSettings(settings: InsertChatSettings): Promise<ChatSettings> {
-    this.chatSettings = {
-      id: this.chatSettings?.id || 1,
-      ...settings,
-    };
-    return this.chatSettings;
+    // Get existing settings or create if none exist
+    const existing = await this.getChatSettings();
+    if (existing) {
+      const result = await db.update(chatSettings)
+        .set(settings)
+        .where(eq(chatSettings.id, existing.id))
+        .returning();
+      return result[0];
+    } else {
+      const result = await db.insert(chatSettings).values(settings).returning();
+      return result[0];
+    }
   }
 }
 
-export const storage = new MemStorage();
+export const storage = new DatabaseStorage();
