@@ -91,19 +91,25 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const temperature = validatedRequest.temperature || parseFloat(settings?.temperature || "0.7");
       const maxTokens = validatedRequest.maxTokens || settings?.maxTokens || 512;
 
-      // Make request to local VLLM server
+      // Make request to local VLLM server using completions endpoint for BLOOM models
       const vllmHost = process.env.VLLM_HOST || "localhost";
-      const vllmResponse = await fetch(`http://${vllmHost}:8000/v1/chat/completions`, {
+      
+      // Convert chat messages to a single prompt for BLOOM
+      const prompt = validatedRequest.messages.map(msg => 
+        msg.role === "user" ? `Human: ${msg.content}` : `Assistant: ${msg.content}`
+      ).join("\n") + "\nAssistant:";
+      
+      const vllmResponse = await fetch(`http://${vllmHost}:8000/v1/completions`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
         },
         body: JSON.stringify({
-          model: currentModel || "bigscience/bloomz-7b1",
-          messages: validatedRequest.messages,
+          model: currentModel || "bigscience/bloom-3b",
+          prompt,
           temperature,
           max_tokens: maxTokens,
-          stream: false,
+          stop: ["\nHuman:", "\n\n"],
         }),
       });
 
@@ -112,7 +118,18 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
 
       const completion = await vllmResponse.json();
-      res.json(completion);
+      
+      // Convert completions response to chat format for frontend compatibility
+      const chatResponse = {
+        choices: [{
+          message: {
+            role: "assistant",
+            content: completion.choices[0]?.text?.trim() || "No response generated"
+          }
+        }]
+      };
+      
+      res.json(chatResponse);
     } catch (error) {
       console.error("Chat completion error:", error);
       res.status(500).json({ 
