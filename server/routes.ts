@@ -14,7 +14,7 @@ let vllmProcess: ChildProcess | null = null;
 let currentModel: string | null = null;
 
 export async function registerRoutes(app: Express): Promise<Server> {
-  // Start VLLM model
+  // Start VLLM model (generates WSL command for user)
   app.post("/api/models/start", async (req, res) => {
     try {
       const { model } = req.body;
@@ -23,46 +23,24 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(400).json({ error: "Invalid model specified" });
       }
 
-      if (vllmProcess) {
-        return res.status(400).json({ error: "A model is already running. Stop it first." });
-      }
-
-      console.log(`Starting VLLM with model: ${model}`);
+      // Generate the command for the user to run in WSL
+      const command = `python3 -m vllm.entrypoints.openai.api_server --model ${model} --host 0.0.0.0 --port 8000`;
       
-      vllmProcess = spawn("python3", [
-        "-m", "vllm.entrypoints.openai.api_server",
-        "--model", model,
-        "--host", "0.0.0.0",
-        "--port", "8000"
-      ], {
-        stdio: ['pipe', 'pipe', 'pipe'],
-      });
-
-      currentModel = model;
-
-      vllmProcess.stdout?.on('data', (data) => {
-        console.log(`[VLLM] ${data}`);
-      });
-
-      vllmProcess.stderr?.on('data', (data) => {
-        console.error(`[VLLM Error] ${data}`);
-      });
-
-      vllmProcess.on('close', (code) => {
-        console.log(`VLLM process exited with code ${code}`);
-        vllmProcess = null;
-        currentModel = null;
-      });
-
       res.json({ 
-        message: "Model starting", 
+        message: `To start ${model}, run this command in your WSL terminal:`,
+        command,
         model,
-        pid: vllmProcess.pid 
+        instructions: [
+          "1. Open your WSL terminal",
+          "2. Copy and run the command above",
+          "3. Wait for the model to load",
+          "4. The interface will automatically detect when it's ready"
+        ]
       });
     } catch (error) {
       console.error("Start model error:", error);
       res.status(500).json({ 
-        error: "Failed to start model",
+        error: "Failed to generate start command",
         details: error instanceof Error ? error.message : "Unknown error"
       });
     }

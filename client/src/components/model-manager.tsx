@@ -15,6 +15,7 @@ const AVAILABLE_MODELS = [
 
 export default function ModelManager() {
   const [selectedModel, setSelectedModel] = useState("bigscience/bloomz-7b1");
+  const [showInstructions, setShowInstructions] = useState(false);
   const { toast } = useToast();
   const queryClient = useQueryClient();
 
@@ -30,21 +31,20 @@ export default function ModelManager() {
     refetchInterval: 3000, // Check every 3 seconds
   });
 
-  // Start model mutation
-  const startModelMutation = useMutation({
+  // Generate WSL command for model
+  const generateCommandMutation = useMutation({
     mutationFn: chatApi.startModel,
     onSuccess: (data) => {
-      queryClient.invalidateQueries({ queryKey: ["/api/models/status"] });
-      queryClient.invalidateQueries({ queryKey: ["/api/chat/status"] });
+      setShowInstructions(true);
       toast({
-        title: "Model Starting",
-        description: `${data.model} is starting up. This may take a few minutes.`,
+        title: "Command Generated",
+        description: `Copy the command below to start ${selectedModel} in WSL`,
       });
     },
     onError: (error: any) => {
       toast({
-        title: "Failed to Start Model",
-        description: error.message || "An error occurred while starting the model.",
+        title: "Error",
+        description: error.message || "Failed to generate command.",
         variant: "destructive",
       });
     },
@@ -70,16 +70,25 @@ export default function ModelManager() {
     },
   });
 
-  const handleStartModel = () => {
-    startModelMutation.mutate(selectedModel);
+  const handleGenerateCommand = () => {
+    generateCommandMutation.mutate(selectedModel);
   };
 
   const handleStopModel = () => {
     stopModelMutation.mutate();
   };
 
-  const isLoading = startModelMutation.isPending || stopModelMutation.isPending;
-  const currentModelInfo = AVAILABLE_MODELS.find(m => m.id === modelStatus?.model);
+  const copyToClipboard = (text: string) => {
+    navigator.clipboard.writeText(text);
+    toast({
+      title: "Copied!",
+      description: "Command copied to clipboard",
+    });
+  };
+
+  const isLoading = generateCommandMutation.isPending || stopModelMutation.isPending;
+  const selectedModelInfo = AVAILABLE_MODELS.find(m => m.id === selectedModel);
+  const command = `python3 -m vllm.entrypoints.openai.api_server --model ${selectedModel} --host 0.0.0.0 --port 8000`;
 
   return (
     <div className="p-6 border-b border-code-border">
@@ -102,29 +111,60 @@ export default function ModelManager() {
           </div>
         </div>
 
-        {/* Connection Info */}
+        {/* Model Selection */}
+        <div>
+          <label className="block text-xs text-slate-400 mb-2">Select Model:</label>
+          <Select value={selectedModel} onValueChange={setSelectedModel}>
+            <SelectTrigger className="w-full bg-slate-700 border-slate-600 text-slate-200">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent className="bg-slate-700 border-slate-600">
+              {AVAILABLE_MODELS.map((model) => (
+                <SelectItem key={model.id} value={model.id} className="text-slate-200 focus:bg-slate-600">
+                  <div>
+                    <div className="font-medium">{model.name}</div>
+                    <div className="text-xs text-slate-400">{model.size}</div>
+                  </div>
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+
+        {/* WSL Command */}
+        <div className="bg-slate-800 rounded-md p-3">
+          <div className="flex items-center justify-between mb-2">
+            <div className="text-xs text-slate-400">WSL Command for {selectedModelInfo?.name}:</div>
+            <Button
+              onClick={() => copyToClipboard(command)}
+              variant="outline"
+              size="sm"
+              className="text-xs h-6 px-2 bg-slate-700 hover:bg-slate-600 text-slate-200"
+            >
+              Copy
+            </Button>
+          </div>
+          <div className="bg-slate-900 rounded p-2 font-mono text-xs text-slate-300 break-all">
+            {command}
+          </div>
+        </div>
+
+        {/* Connection Status */}
         {connectionStatus?.connected ? (
           <div className="bg-emerald-900/20 border border-emerald-700 rounded-md p-3">
             <div className="text-xs text-emerald-400 mb-1">✅ Connected to VLLM Server</div>
             <div className="text-xs text-slate-400">Endpoint: localhost:8000</div>
             {connectionStatus?.models && connectionStatus.models.length > 0 && (
               <div className="text-xs text-slate-400 mt-1">
-                Model: {connectionStatus.models[0]?.id || 'Unknown'}
+                Running: {connectionStatus.models[0]?.id || 'Unknown'}
               </div>
             )}
           </div>
         ) : (
-          <div className="bg-slate-800 rounded-md p-3">
-            <div className="text-xs text-slate-400 mb-2">⚠️ VLLM Server Not Connected</div>
-            <div className="text-xs text-slate-300 mb-2">To connect, run in your WSL terminal:</div>
-            <div className="bg-slate-900 rounded p-2 font-mono text-xs text-slate-300 mb-2">
-              python3 -m vllm.entrypoints.openai.api_server \<br />
-              &nbsp;&nbsp;--model bigscience/bloomz-7b1 \<br />
-              &nbsp;&nbsp;--host 0.0.0.0 \<br />
-              &nbsp;&nbsp;--port 8000
-            </div>
-            <div className="text-xs text-slate-500">
-              Replace the model name with any BLOOM variant you want to run.
+          <div className="bg-orange-900/20 border border-orange-700 rounded-md p-3">
+            <div className="text-xs text-orange-400 mb-1">⚠️ No VLLM Server Detected</div>
+            <div className="text-xs text-slate-400">
+              Copy the command above and run it in your WSL terminal to start the selected model.
             </div>
           </div>
         )}
