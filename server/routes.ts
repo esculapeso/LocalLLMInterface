@@ -92,7 +92,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const maxTokens = validatedRequest.maxTokens || settings?.maxTokens || 512;
 
       // Make request to local VLLM server
-      const vllmResponse = await fetch("http://localhost:8000/v1/chat/completions", {
+      const vllmResponse = await fetch("http://172.21.65.17:8000/v1/chat/completions", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -124,7 +124,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Check VLLM server connection
   app.get("/api/chat/status", async (req, res) => {
     try {
-      const response = await fetch("http://localhost:8000/v1/models", {
+      const response = await fetch("http://172.21.65.17:8000/v1/models", {
         method: "GET",
         headers: {
           "Content-Type": "application/json",
