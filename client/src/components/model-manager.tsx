@@ -24,6 +24,12 @@ export default function ModelManager() {
     refetchInterval: 2000, // Check every 2 seconds
   });
 
+  // Get VLLM connection status
+  const { data: connectionStatus } = useQuery({
+    queryKey: ["/api/chat/status"],
+    refetchInterval: 3000, // Check every 3 seconds
+  });
+
   // Start model mutation
   const startModelMutation = useMutation({
     mutationFn: chatApi.startModel,
@@ -85,86 +91,61 @@ export default function ModelManager() {
       <div className="space-y-4">
         {/* Current Status */}
         <div className="flex items-center justify-between">
-          <span className="text-xs text-slate-400">Status:</span>
+          <span className="text-xs text-slate-400">VLLM Status:</span>
           <div className="flex items-center gap-2">
             <div className={`w-2 h-2 rounded-full ${
-              modelStatus?.running ? 'bg-emerald-500 animate-pulse' : 'bg-red-500'
+              connectionStatus?.connected ? 'bg-emerald-500 animate-pulse' : 'bg-red-500'
             }`}></div>
-            <Badge variant={modelStatus?.running ? "default" : "secondary"} className="text-xs">
-              {modelStatus?.running ? "Running" : "Stopped"}
+            <Badge variant={connectionStatus?.connected ? "default" : "secondary"} className="text-xs">
+              {connectionStatus?.connected ? "Connected" : "Disconnected"}
             </Badge>
           </div>
         </div>
 
-        {/* Currently Running Model */}
-        {modelStatus?.running && currentModelInfo && (
-          <div className="bg-slate-800 rounded-md p-3">
-            <div className="text-xs text-slate-400 mb-1">Currently Running:</div>
-            <div className="text-sm text-slate-200 font-medium">{currentModelInfo.name}</div>
-            <div className="text-xs text-slate-500">{currentModelInfo.size}</div>
-            {modelStatus.pid && (
-              <div className="text-xs text-slate-500 mt-1">PID: {modelStatus.pid}</div>
+        {/* Connection Info */}
+        {connectionStatus?.connected ? (
+          <div className="bg-emerald-900/20 border border-emerald-700 rounded-md p-3">
+            <div className="text-xs text-emerald-400 mb-1">✅ Connected to VLLM Server</div>
+            <div className="text-xs text-slate-400">Endpoint: localhost:8000</div>
+            {connectionStatus?.models && connectionStatus.models.length > 0 && (
+              <div className="text-xs text-slate-400 mt-1">
+                Model: {connectionStatus.models[0]?.id || 'Unknown'}
+              </div>
             )}
           </div>
-        )}
-
-        {/* Model Selection */}
-        {!modelStatus?.running && (
-          <div>
-            <label className="block text-xs text-slate-400 mb-2">Select Model:</label>
-            <Select value={selectedModel} onValueChange={setSelectedModel}>
-              <SelectTrigger className="w-full bg-slate-700 border-slate-600 text-slate-200">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent className="bg-slate-700 border-slate-600">
-                {AVAILABLE_MODELS.map((model) => (
-                  <SelectItem key={model.id} value={model.id} className="text-slate-200 focus:bg-slate-600">
-                    <div>
-                      <div className="font-medium">{model.name}</div>
-                      <div className="text-xs text-slate-400">{model.size}</div>
-                    </div>
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+        ) : (
+          <div className="bg-slate-800 rounded-md p-3">
+            <div className="text-xs text-slate-400 mb-2">⚠️ VLLM Server Not Connected</div>
+            <div className="text-xs text-slate-300 mb-2">To connect, run in your WSL terminal:</div>
+            <div className="bg-slate-900 rounded p-2 font-mono text-xs text-slate-300 mb-2">
+              python3 -m vllm.entrypoints.openai.api_server \<br />
+              &nbsp;&nbsp;--model bigscience/bloomz-7b1 \<br />
+              &nbsp;&nbsp;--host 0.0.0.0 \<br />
+              &nbsp;&nbsp;--port 8000
+            </div>
+            <div className="text-xs text-slate-500">
+              Replace the model name with any BLOOM variant you want to run.
+            </div>
           </div>
         )}
 
-        {/* Control Buttons */}
-        <div className="flex gap-2">
-          {!modelStatus?.running ? (
-            <Button
-              onClick={handleStartModel}
-              disabled={isLoading}
-              className="flex-1 bg-emerald-600 hover:bg-emerald-700 text-white"
-            >
-              {isLoading ? (
-                <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-              ) : (
-                <Play className="w-4 h-4 mr-2" />
-              )}
-              Start Model
-            </Button>
-          ) : (
-            <Button
-              onClick={handleStopModel}
-              disabled={isLoading}
-              variant="destructive"
-              className="flex-1"
-            >
-              {isLoading ? (
-                <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-              ) : (
-                <Square className="w-4 h-4 mr-2" />
-              )}
-              Stop Model
-            </Button>
-          )}
+        {/* Available Models Info */}
+        <div className="bg-slate-800 rounded-md p-3">
+          <div className="text-xs text-slate-400 mb-2">Available BLOOM Models:</div>
+          <div className="space-y-1">
+            {AVAILABLE_MODELS.map((model) => (
+              <div key={model.id} className="flex justify-between text-xs">
+                <span className="text-slate-300">{model.name}</span>
+                <span className="text-slate-500">{model.size}</span>
+              </div>
+            ))}
+          </div>
         </div>
 
-        {/* Info */}
+        {/* Connection Instructions */}
         <div className="text-xs text-slate-500">
-          Models will automatically download on first use. Larger models require more memory and take longer to start.
+          💡 Make sure your VLLM server is accessible on localhost:8000. If running in WSL, 
+          the interface should automatically detect it once started.
         </div>
       </div>
     </div>
