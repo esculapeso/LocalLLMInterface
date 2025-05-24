@@ -8,6 +8,7 @@
 4. **Start the interface**: Double-click `start-windows.bat` OR run:
    ```cmd
    set NODE_ENV=development
+   set HOST=localhost
    npx tsx server/index.ts
    ```
 
